@@ -13,7 +13,9 @@ import (
 	"github.com/ppnati33/mymealprep-backend/internal/auth"
 	"github.com/ppnati33/mymealprep-backend/internal/config"
 	"github.com/ppnati33/mymealprep-backend/internal/db"
+	"github.com/ppnati33/mymealprep-backend/internal/events"
 	mw "github.com/ppnati33/mymealprep-backend/internal/middleware"
+	"github.com/ppnati33/mymealprep-backend/internal/mealplan"
 	"github.com/ppnati33/mymealprep-backend/internal/recipe"
 )
 
@@ -46,10 +48,18 @@ func main() {
 	authSvc := auth.NewService(authRepo, cfg.JWTSecret)
 	authHandler := auth.NewHandler(authSvc)
 
+	// Event bus
+	bus := events.New()
+
 	// Recipe domain
 	recipeRepo := recipe.NewRepository(pool)
 	recipeSvc := recipe.NewService(recipeRepo)
 	recipeHandler := recipe.NewHandler(recipeSvc)
+
+	// Meal plan domain
+	mealPlanRepo := mealplan.NewRepository(pool)
+	mealPlanSvc := mealplan.NewService(mealPlanRepo, bus)
+	mealPlanHandler := mealplan.NewHandler(mealPlanSvc)
 
 	r := chi.NewRouter()
 
@@ -72,6 +82,14 @@ func main() {
 		// Protected routes
 		r.Group(func(r chi.Router) {
 			r.Use(mw.Auth(cfg.JWTSecret))
+
+			// Meal plans
+			r.Get("/meal-plans", mealPlanHandler.List)
+			r.Post("/meal-plans", mealPlanHandler.Create)
+			r.Get("/meal-plans/active", mealPlanHandler.GetActive)
+			r.Put("/meal-plans/{id}", mealPlanHandler.Update)
+			r.Post("/meal-plans/{id}/activate", mealPlanHandler.Activate)
+			r.Delete("/meal-plans/{id}", mealPlanHandler.Delete)
 
 			// Recipes
 			r.Get("/recipes", recipeHandler.List)
