@@ -14,6 +14,7 @@ import (
 	"github.com/ppnati33/mymealprep-backend/internal/config"
 	"github.com/ppnati33/mymealprep-backend/internal/db"
 	"github.com/ppnati33/mymealprep-backend/internal/events"
+	"github.com/ppnati33/mymealprep-backend/internal/grocery"
 	mw "github.com/ppnati33/mymealprep-backend/internal/middleware"
 	"github.com/ppnati33/mymealprep-backend/internal/mealplan"
 	"github.com/ppnati33/mymealprep-backend/internal/recipe"
@@ -61,6 +62,11 @@ func main() {
 	mealPlanSvc := mealplan.NewService(mealPlanRepo, bus)
 	mealPlanHandler := mealplan.NewHandler(mealPlanSvc)
 
+	// Grocery domain — subscribes to PlanActivatedEvent via bus
+	groceryRepo := grocery.NewRepository(pool)
+	grocerySvc := grocery.NewService(groceryRepo, bus)
+	groceryHandler := grocery.NewHandler(grocerySvc)
+
 	r := chi.NewRouter()
 
 	r.Route("/api/v1", func(r chi.Router) {
@@ -82,6 +88,13 @@ func main() {
 		// Protected routes
 		r.Group(func(r chi.Router) {
 			r.Use(mw.Auth(cfg.JWTSecret))
+
+			// Grocery
+			r.Get("/grocery", groceryHandler.Get)
+			r.Post("/grocery/items", groceryHandler.AddItem)
+			r.Patch("/grocery/items/{id}", groceryHandler.UpdateItem)
+			r.Delete("/grocery/items/{id}", groceryHandler.DeleteItem)
+			r.Post("/grocery/regenerate", groceryHandler.Regenerate)
 
 			// Meal plans
 			r.Get("/meal-plans", mealPlanHandler.List)
