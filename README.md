@@ -88,12 +88,12 @@ go test -tags e2e ./e2e/... -v -timeout 120s
 
 ## API
 
-| Domain | Base path |
+| Domain | Endpoints |
 |--------|-----------|
 | Auth | `POST /api/v1/auth/register`, `POST /api/v1/auth/login` |
-| Recipes | `GET/POST /api/v1/recipes`, `GET/PUT/DELETE /api/v1/recipes/:id` |
-| Meal plans | `GET/POST /api/v1/meal-plans`, `POST /api/v1/meal-plans/:id/activate` |
-| Grocery | `GET /api/v1/grocery`, `POST /api/v1/grocery/items` |
+| Recipes | `GET/POST /api/v1/recipes`, `GET/PUT/DELETE /api/v1/recipes/:id`, `POST/DELETE /api/v1/recipes/:id/like` |
+| Meal plans | `GET/POST /api/v1/meal-plans`, `GET /api/v1/meal-plans/active`, `PUT/DELETE /api/v1/meal-plans/:id`, `POST /api/v1/meal-plans/:id/activate` |
+| Grocery | `GET /api/v1/grocery`, `POST /api/v1/grocery/regenerate`, `POST /api/v1/grocery/items`, `PATCH/DELETE /api/v1/grocery/items/:id` |
 
 See [ARCHITECTURE.md § REST API Contract](./ARCHITECTURE.md#3-rest-api-contract) for the full contract.
 
@@ -101,13 +101,16 @@ See [ARCHITECTURE.md § REST API Contract](./ARCHITECTURE.md#3-rest-api-contract
 
 ```
 cmd/server/        # Entry point
+e2e/               # E2E tests (cross-domain flows, run with -tags e2e)
 internal/
+  server/          # Router wiring (NewRouter)
   auth/            # Registration, login, JWT middleware
   recipe/          # Recipe CRUD and likes
   mealplan/        # Meal plans, history, activation
   grocery/         # Grocery list, auto-generation from active plan
   events/          # In-process event bus
-  middleware/       # Auth, logging
+  middleware/      # Auth middleware
   db/              # DB connection, migrations
   config/          # Env var loading
+  testhelper/      # Shared test utilities (testcontainers, JWT helpers)
 ```
