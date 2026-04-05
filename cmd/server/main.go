@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/ppnati33/mymealprep-backend/internal/auth"
 	"github.com/ppnati33/mymealprep-backend/internal/config"
 	"github.com/ppnati33/mymealprep-backend/internal/db"
+	mw "github.com/ppnati33/mymealprep-backend/internal/middleware"
 )
 
 func main() {
@@ -38,17 +40,34 @@ func main() {
 	}
 	defer pool.Close()
 
+	// Auth domain
+	authRepo := auth.NewUserRepository(pool)
+	authSvc := auth.NewService(authRepo, cfg.JWTSecret)
+	authHandler := auth.NewHandler(authSvc)
+
 	r := chi.NewRouter()
 
-	r.Get("/api/v1/health", func(w http.ResponseWriter, r *http.Request) {
-		if err := pool.Ping(r.Context()); err != nil {
+	r.Route("/api/v1", func(r chi.Router) {
+		r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+			if err := pool.Ping(r.Context()); err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				w.Write([]byte(`{"status":"error","db":"unreachable"}`))
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte(`{"status":"error","db":"unreachable"}`))
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"status":"ok","db":"ok"}`))
+			w.Write([]byte(`{"status":"ok","db":"ok"}`))
+		})
+
+		// Public auth routes
+		r.Post("/auth/register", authHandler.Register)
+		r.Post("/auth/login", authHandler.Login)
+
+		// Protected routes (populated in future stages)
+		r.Group(func(r chi.Router) {
+			r.Use(mw.Auth(cfg.JWTSecret))
+			// Stage 3+: recipes, meal plans, grocery
+		})
 	})
 
 	srv := &http.Server{
