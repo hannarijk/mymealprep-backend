@@ -11,7 +11,8 @@ import (
 
 type contextKey string
 
-const userIDKey contextKey = "userID"
+// UserIDContextKey is exported so test helpers can inject a userID into context directly.
+const UserIDContextKey contextKey = "userID"
 
 // Auth returns a middleware that validates JWT Bearer tokens and injects the
 // authenticated user's ID into the request context.
@@ -50,7 +51,7 @@ func Auth(jwtSecret string) func(http.Handler) http.Handler {
 			}
 
 			next.ServeHTTP(w, r.WithContext(
-				context.WithValue(r.Context(), userIDKey, userID),
+				context.WithValue(r.Context(), UserIDContextKey, userID),
 			))
 		})
 	}
@@ -59,7 +60,7 @@ func Auth(jwtSecret string) func(http.Handler) http.Handler {
 // UserIDFromContext returns the authenticated user's ID from the request context.
 // Must only be called inside routes protected by the Auth middleware.
 func UserIDFromContext(ctx context.Context) uuid.UUID {
-	return ctx.Value(userIDKey).(uuid.UUID)
+	return ctx.Value(UserIDContextKey).(uuid.UUID)
 }
 
 func writeUnauthorized(w http.ResponseWriter) {
