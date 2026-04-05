@@ -50,12 +50,12 @@ func (s *service) Create(ctx context.Context, userID uuid.UUID, input CreateInpu
 		UserID:      userID,
 		Name:        input.Name,
 		Section:     input.Section,
-		Tags:        input.Tags,
+		Tags:        coalesceStrings(input.Tags),
 		TimeMinutes: input.TimeMinutes,
 		Servings:    input.Servings,
 		Why:         input.Why,
 		ImageURL:    input.ImageURL,
-		Steps:       input.Steps,
+		Steps:       coalesceStrings(input.Steps),
 	}
 
 	for _, ing := range input.Ingredients {
@@ -87,12 +87,12 @@ func (s *service) Update(ctx context.Context, id, userID uuid.UUID, input Update
 		UserID:      userID,
 		Name:        input.Name,
 		Section:     input.Section,
-		Tags:        input.Tags,
+		Tags:        coalesceStrings(input.Tags),
 		TimeMinutes: input.TimeMinutes,
 		Servings:    input.Servings,
 		Why:         input.Why,
 		ImageURL:    input.ImageURL,
-		Steps:       input.Steps,
+		Steps:       coalesceStrings(input.Steps),
 	}
 
 	for _, ing := range input.Ingredients {
@@ -120,4 +120,11 @@ func (s *service) Like(ctx context.Context, id, userID uuid.UUID) error {
 
 func (s *service) Unlike(ctx context.Context, id, userID uuid.UUID) error {
 	return s.repo.Unlike(ctx, id, userID)
+}
+
+func coalesceStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
