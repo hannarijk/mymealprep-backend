@@ -14,6 +14,7 @@ import (
 	"github.com/ppnati33/mymealprep-backend/internal/config"
 	"github.com/ppnati33/mymealprep-backend/internal/db"
 	mw "github.com/ppnati33/mymealprep-backend/internal/middleware"
+	"github.com/ppnati33/mymealprep-backend/internal/recipe"
 )
 
 func main() {
@@ -45,6 +46,11 @@ func main() {
 	authSvc := auth.NewService(authRepo, cfg.JWTSecret)
 	authHandler := auth.NewHandler(authSvc)
 
+	// Recipe domain
+	recipeRepo := recipe.NewRepository(pool)
+	recipeSvc := recipe.NewService(recipeRepo)
+	recipeHandler := recipe.NewHandler(recipeSvc)
+
 	r := chi.NewRouter()
 
 	r.Route("/api/v1", func(r chi.Router) {
@@ -63,10 +69,18 @@ func main() {
 		r.Post("/auth/register", authHandler.Register)
 		r.Post("/auth/login", authHandler.Login)
 
-		// Protected routes (populated in future stages)
+		// Protected routes
 		r.Group(func(r chi.Router) {
 			r.Use(mw.Auth(cfg.JWTSecret))
-			// Stage 3+: recipes, meal plans, grocery
+
+			// Recipes
+			r.Get("/recipes", recipeHandler.List)
+			r.Post("/recipes", recipeHandler.Create)
+			r.Get("/recipes/{id}", recipeHandler.Get)
+			r.Put("/recipes/{id}", recipeHandler.Update)
+			r.Delete("/recipes/{id}", recipeHandler.Delete)
+			r.Post("/recipes/{id}/like", recipeHandler.Like)
+			r.Delete("/recipes/{id}/like", recipeHandler.Unlike)
 		})
 	})
 
