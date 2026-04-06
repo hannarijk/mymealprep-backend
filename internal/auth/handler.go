@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/go-playground/validator/v10"
+	mw "github.com/ppnati33/mymealprep-backend/internal/middleware"
 )
 
 type Handler struct {
@@ -92,6 +93,23 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		Token: token,
 		User:  userResponse{ID: user.ID.String(), Email: user.Email},
 	})
+}
+
+func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {
+	userID := mw.UserIDFromContext(r.Context())
+
+	user, err := h.svc.GetMe(r.Context(), userID)
+	if err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			writeError(w, http.StatusNotFound, "user not found")
+			return
+		}
+		slog.Error("get me", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, userResponse{ID: user.ID.String(), Email: user.Email})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

@@ -52,6 +52,8 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret string) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(mw.Auth(jwtSecret))
 
+			r.Get("/auth/me", authHandler.GetMe)
+
 			r.Get("/grocery", groceryHandler.Get)
 			r.Post("/grocery/items", groceryHandler.AddItem)
 			r.Patch("/grocery/items/{id}", groceryHandler.UpdateItem)

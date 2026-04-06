@@ -14,6 +14,7 @@ import (
 type Service interface {
 	Register(ctx context.Context, email, password string) (*User, string, error)
 	Login(ctx context.Context, email, password string) (*User, string, error)
+	GetMe(ctx context.Context, id uuid.UUID) (*User, error)
 }
 
 type service struct {
@@ -68,6 +69,10 @@ func (s *service) Login(ctx context.Context, email, password string) (*User, str
 	}
 
 	return user, token, nil
+}
+
+func (s *service) GetMe(ctx context.Context, id uuid.UUID) (*User, error) {
+	return s.repo.FindByID(ctx, id)
 }
 
 func (s *service) generateToken(userID uuid.UUID) (string, error) {
