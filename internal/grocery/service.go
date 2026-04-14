@@ -30,6 +30,7 @@ type service struct {
 func NewService(repo Repository, bus *events.Bus) Service {
 	svc := &service{repo: repo}
 	bus.Subscribe(mealplan.PlanActivatedEvent{}.EventName(), svc.onPlanActivated)
+	bus.Subscribe(mealplan.MealPlanUpdatedEvent{}.EventName(), svc.onPlanUpdated)
 	return svc
 }
 
@@ -84,16 +85,26 @@ func (s *service) Regenerate(ctx context.Context, userID uuid.UUID) (*GroceryLis
 }
 
 // onPlanActivated is subscribed to PlanActivatedEvent on the bus.
-// It creates/updates the grocery list for the activated plan.
 func (s *service) onPlanActivated(ctx context.Context, event events.Event) error {
 	evt := event.(mealplan.PlanActivatedEvent)
+	return s.regenerateGrocery(ctx, evt.UserID, evt.MealPlanID)
+}
 
-	list, err := s.repo.FindOrCreateForPlan(ctx, evt.UserID, evt.MealPlanID)
+// onPlanUpdated is subscribed to MealPlanUpdatedEvent on the bus.
+func (s *service) onPlanUpdated(ctx context.Context, event events.Event) error {
+	evt := event.(mealplan.MealPlanUpdatedEvent)
+	return s.regenerateGrocery(ctx, evt.UserID, evt.MealPlanID)
+}
+
+// regenerateGrocery creates or updates the grocery list for the given plan,
+// deriving items from the plan's recipe ingredients (keeping manual items).
+func (s *service) regenerateGrocery(ctx context.Context, userID, mealPlanID uuid.UUID) error {
+	list, err := s.repo.FindOrCreateForPlan(ctx, userID, mealPlanID)
 	if err != nil {
 		return fmt.Errorf("find or create grocery list: %w", err)
 	}
 
-	items, err := s.repo.AggregateIngredients(ctx, evt.MealPlanID)
+	items, err := s.repo.AggregateIngredients(ctx, mealPlanID)
 	if err != nil {
 		return fmt.Errorf("aggregate ingredients: %w", err)
 	}
