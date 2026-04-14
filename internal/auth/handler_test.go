@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/ppnati33/mymealprep-backend/internal/auth"
 	"github.com/ppnati33/mymealprep-backend/internal/testhelper"
 	"github.com/stretchr/testify/assert"
@@ -29,6 +30,10 @@ func (m *mockAuthService) Register(_ context.Context, _, _ string) (*auth.User, 
 
 func (m *mockAuthService) Login(_ context.Context, _, _ string) (*auth.User, string, error) {
 	return m.loginUser, m.loginToken, m.loginErr
+}
+
+func (m *mockAuthService) GetMe(_ context.Context, _ uuid.UUID) (*auth.User, error) {
+	return nil, nil
 }
 
 func post(t *testing.T, handler http.HandlerFunc, body any) *httptest.ResponseRecorder {

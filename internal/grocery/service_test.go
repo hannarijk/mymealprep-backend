@@ -8,6 +8,7 @@ import (
 	"github.com/ppnati33/mymealprep-backend/internal/events"
 	"github.com/ppnati33/mymealprep-backend/internal/grocery"
 	"github.com/ppnati33/mymealprep-backend/internal/mealplan"
+	"github.com/ppnati33/mymealprep-backend/internal/recipe"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -122,6 +123,36 @@ func TestGroceryService_OnPlanUpdated_regeneratesItems(t *testing.T) {
 
 	assert.Len(t, repo.items, 1)
 	assert.Equal(t, "Milk", repo.items[0].Name)
+}
+
+func TestGroceryService_OnRecipeUpdated_regeneratesItems(t *testing.T) {
+	userID := uuid.New()
+	planID := uuid.New()
+	list := &grocery.GroceryList{ID: uuid.New(), UserID: userID, MealPlanID: planID}
+	ingredients := []grocery.GroceryItem{
+		{ID: uuid.New(), Name: "Chicken", Amount: "500g", Department: "Protein"},
+	}
+	repo := newMockRepo(list, ingredients)
+	bus := events.New()
+	grocery.NewService(repo, bus) // registers subscription
+
+	err := bus.Publish(context.Background(), recipe.RecipeUpdatedEvent{
+		UserID: userID, RecipeID: uuid.New(),
+	})
+	require.NoError(t, err)
+
+	assert.Len(t, repo.items, 1)
+	assert.Equal(t, "Chicken", repo.items[0].Name)
+}
+
+func TestGroceryService_OnRecipeUpdated_noActiveList_isNoop(t *testing.T) {
+	bus := events.New()
+	grocery.NewService(newMockRepo(nil, nil), bus) // no active list
+
+	err := bus.Publish(context.Background(), recipe.RecipeUpdatedEvent{
+		UserID: uuid.New(), RecipeID: uuid.New(),
+	})
+	require.NoError(t, err) // ErrNotFound inside handler is swallowed
 }
 
 func TestGroceryService_Regenerate(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/ppnati33/mymealprep-backend/internal/events"
 	"github.com/ppnati33/mymealprep-backend/internal/recipe"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -79,7 +80,7 @@ func (m *mockRecipeRepo) Unlike(_ context.Context, recipeID, userID uuid.UUID) e
 }
 
 func TestService_Create(t *testing.T) {
-	svc := recipe.NewService(newMockRecipeRepo())
+	svc := recipe.NewService(newMockRecipeRepo(), events.New())
 	userID := uuid.New()
 	ctx := context.Background()
 
@@ -105,7 +106,7 @@ func TestService_Create(t *testing.T) {
 
 func TestService_Delete_ownership(t *testing.T) {
 	repo := newMockRecipeRepo()
-	svc := recipe.NewService(repo)
+	svc := recipe.NewService(repo, events.New())
 	ownerID := uuid.New()
 	otherID := uuid.New()
 	ctx := context.Background()
@@ -127,4 +128,33 @@ func TestService_Delete_ownership(t *testing.T) {
 		err := svc.Delete(ctx, r2.ID, otherID)
 		assert.ErrorIs(t, err, recipe.ErrNotFound)
 	})
+}
+
+func TestService_Update_publishesEvent(t *testing.T) {
+	repo := newMockRecipeRepo()
+	bus := events.New()
+	svc := recipe.NewService(repo, bus)
+	userID := uuid.New()
+	ctx := context.Background()
+
+	r, err := svc.Create(ctx, userID, recipe.CreateInput{
+		Name: "Pasta", Section: "Lunch/Dinner", TimeMinutes: 20, Servings: 2,
+	})
+	require.NoError(t, err)
+
+	var received events.Event
+	bus.Subscribe(recipe.RecipeUpdatedEvent{}.EventName(), func(_ context.Context, e events.Event) error {
+		received = e
+		return nil
+	})
+
+	_, err = svc.Update(ctx, r.ID, userID, recipe.UpdateInput{
+		Name: "Pasta v2", Section: "Lunch/Dinner", TimeMinutes: 25, Servings: 2,
+	})
+	require.NoError(t, err)
+
+	require.NotNil(t, received)
+	evt := received.(recipe.RecipeUpdatedEvent)
+	assert.Equal(t, userID, evt.UserID)
+	assert.Equal(t, r.ID, evt.RecipeID)
 }

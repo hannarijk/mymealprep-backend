@@ -2,8 +2,10 @@ package recipe
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/ppnati33/mymealprep-backend/internal/events"
 )
 
 type Service interface {
@@ -38,10 +40,11 @@ type IngredientInput struct {
 
 type service struct {
 	repo Repository
+	bus  *events.Bus
 }
 
-func NewService(repo Repository) Service {
-	return &service{repo: repo}
+func NewService(repo Repository, bus *events.Bus) Service {
+	return &service{repo: repo, bus: bus}
 }
 
 func (s *service) Create(ctx context.Context, userID uuid.UUID, input CreateInput) (*Recipe, error) {
@@ -107,7 +110,17 @@ func (s *service) Update(ctx context.Context, id, userID uuid.UUID, input Update
 	if err := s.repo.Update(ctx, recipe); err != nil {
 		return nil, err
 	}
-	return s.repo.FindByID(ctx, id, userID)
+
+	updated, err := s.repo.FindByID(ctx, id, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.bus.Publish(ctx, RecipeUpdatedEvent{UserID: userID, RecipeID: id}); err != nil {
+		return nil, fmt.Errorf("publish recipe updated event: %w", err)
+	}
+
+	return updated, nil
 }
 
 func (s *service) Delete(ctx context.Context, id, userID uuid.UUID) error {

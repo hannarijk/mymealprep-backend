@@ -52,3 +52,12 @@ func (f *Filter) Offset() int {
 	}
 	return (f.Page - 1) * f.Limit
 }
+
+// RecipeUpdatedEvent is published when a recipe's ingredients are modified.
+// The grocery domain subscribes to regenerate the active grocery list.
+type RecipeUpdatedEvent struct {
+	UserID   uuid.UUID
+	RecipeID uuid.UUID
+}
+
+func (e RecipeUpdatedEvent) EventName() string { return "recipe.updated" }

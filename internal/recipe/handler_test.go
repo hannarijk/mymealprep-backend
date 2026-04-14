@@ -10,8 +10,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/ppnati33/mymealprep-backend/internal/recipe"
+	"github.com/ppnati33/mymealprep-backend/internal/events"
 	mw "github.com/ppnati33/mymealprep-backend/internal/middleware"
+	"github.com/ppnati33/mymealprep-backend/internal/recipe"
 	"github.com/ppnati33/mymealprep-backend/internal/testhelper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,7 +37,7 @@ func authenticatedRequest(t *testing.T, method, path string, body any, userID uu
 func TestRecipeHandler_List(t *testing.T) {
 	userID := uuid.New()
 	repo := newMockRecipeRepo()
-	h := recipe.NewHandler(recipe.NewService(repo))
+	h := recipe.NewHandler(recipe.NewService(repo, events.New()))
 
 	// Seed a recipe
 	repo.Create(context.Background(), &recipe.Recipe{
@@ -54,7 +55,7 @@ func TestRecipeHandler_List(t *testing.T) {
 }
 
 func TestRecipeHandler_Create(t *testing.T) {
-	h := recipe.NewHandler(recipe.NewService(newMockRecipeRepo()))
+	h := recipe.NewHandler(recipe.NewService(newMockRecipeRepo(), events.New()))
 	userID := uuid.New()
 
 	t.Run("201 on valid request", func(t *testing.T) {
@@ -84,7 +85,7 @@ func TestRecipeHandler_Create(t *testing.T) {
 func TestRecipeHandler_Get(t *testing.T) {
 	userID := uuid.New()
 	repo := newMockRecipeRepo()
-	h := recipe.NewHandler(recipe.NewService(repo))
+	h := recipe.NewHandler(recipe.NewService(repo, events.New()))
 
 	r := &recipe.Recipe{
 		ID: uuid.New(), UserID: userID, Name: "Oatmeal", Section: "Breakfast",
@@ -118,7 +119,7 @@ func TestRecipeHandler_Get(t *testing.T) {
 func TestRecipeHandler_Delete(t *testing.T) {
 	userID := uuid.New()
 	repo := newMockRecipeRepo()
-	h := recipe.NewHandler(recipe.NewService(repo))
+	h := recipe.NewHandler(recipe.NewService(repo, events.New()))
 
 	r := &recipe.Recipe{
 		ID: uuid.New(), UserID: userID, Name: "Oatmeal", Section: "Breakfast",

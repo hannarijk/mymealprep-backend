@@ -2,11 +2,13 @@ package grocery
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/ppnati33/mymealprep-backend/internal/events"
 	"github.com/ppnati33/mymealprep-backend/internal/mealplan"
+	"github.com/ppnati33/mymealprep-backend/internal/recipe"
 )
 
 type Service interface {
@@ -31,6 +33,7 @@ func NewService(repo Repository, bus *events.Bus) Service {
 	svc := &service{repo: repo}
 	bus.Subscribe(mealplan.PlanActivatedEvent{}.EventName(), svc.onPlanActivated)
 	bus.Subscribe(mealplan.MealPlanUpdatedEvent{}.EventName(), svc.onPlanUpdated)
+	bus.Subscribe(recipe.RecipeUpdatedEvent{}.EventName(), svc.onRecipeUpdated)
 	return svc
 }
 
@@ -94,6 +97,19 @@ func (s *service) onPlanActivated(ctx context.Context, event events.Event) error
 func (s *service) onPlanUpdated(ctx context.Context, event events.Event) error {
 	evt := event.(mealplan.MealPlanUpdatedEvent)
 	return s.regenerateGrocery(ctx, evt.UserID, evt.MealPlanID)
+}
+
+// onRecipeUpdated is subscribed to RecipeUpdatedEvent on the bus.
+func (s *service) onRecipeUpdated(ctx context.Context, event events.Event) error {
+	evt := event.(recipe.RecipeUpdatedEvent)
+	list, err := s.repo.FindByUserID(ctx, evt.UserID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil // no active plan, nothing to regenerate
+		}
+		return fmt.Errorf("find grocery list for recipe update: %w", err)
+	}
+	return s.regenerateGrocery(ctx, evt.UserID, list.MealPlanID)
 }
 
 // regenerateGrocery creates or updates the grocery list for the given plan,

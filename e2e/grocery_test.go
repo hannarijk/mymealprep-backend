@@ -100,6 +100,37 @@ func TestGrocery_FullCrossDomainFlow(t *testing.T) {
 	assert.Contains(t, itemNamesInDept(depts, "Pantry"), "Oats")
 }
 
+// TestGrocery_RecipeUpdateRegeneratesGrocery verifies that updating a recipe's
+// ingredients automatically regenerates the active grocery list via the event bus.
+func TestGrocery_RecipeUpdateRegeneratesGrocery(t *testing.T) {
+	c := registerUser(t)
+
+	recipeID := createRecipe(t, c, "Oats", "Pantry")
+	createAndActivatePlan(t, c, recipeID)
+
+	deptsBeforeUpdate := groceryDepartments(t, c)
+	assert.Contains(t, itemNamesInDept(deptsBeforeUpdate, "Pantry"), "Oats")
+
+	// Update the recipe, replacing "Oats" with "Quinoa"
+	resp := c.Put(t, "/api/v1/recipes/"+recipeID, map[string]any{
+		"name":        "Recipe for Quinoa",
+		"section":     "Lunch/Dinner",
+		"timeMinutes": 20,
+		"servings":    2,
+		"ingredients": []map[string]string{
+			{"name": "Quinoa", "amount": "200g", "department": "Pantry"},
+		},
+	})
+	mustStatus(t, resp, http.StatusOK)
+	resp.Body.Close()
+
+	deptsAfterUpdate := groceryDepartments(t, c)
+	assert.Contains(t, itemNamesInDept(deptsAfterUpdate, "Pantry"), "Quinoa",
+		"grocery list should reflect updated ingredient")
+	assert.NotContains(t, itemNamesInDept(deptsAfterUpdate, "Pantry"), "Oats",
+		"old ingredient should be gone after recipe update")
+}
+
 // TestGrocery_SwitchingPlansUpdatesGrocery verifies that activating a second plan
 // regenerates the grocery list to reflect the new plan's ingredients, not the old one's.
 func TestGrocery_SwitchingPlansUpdatesGrocery(t *testing.T) {

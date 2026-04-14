@@ -21,7 +21,7 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret string) http.Handler {
 	bus := events.New()
 
 	recipeRepo := recipe.NewRepository(pool)
-	recipeSvc := recipe.NewService(recipeRepo)
+	recipeSvc := recipe.NewService(recipeRepo, bus)
 	recipeHandler := recipe.NewHandler(recipeSvc)
 
 	mealPlanRepo := mealplan.NewRepository(pool)
