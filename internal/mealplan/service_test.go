@@ -56,9 +56,12 @@ func (m *mockRepository) FindAll(_ context.Context, userID uuid.UUID, _, _ int) 
 }
 
 func (m *mockRepository) Update(_ context.Context, p *mealplan.MealPlan) error {
-	if _, ok := m.plans[p.ID]; !ok {
+	existing, ok := m.plans[p.ID]
+	if !ok {
 		return mealplan.ErrNotFound
 	}
+	// Preserve Active — the real SQL UPDATE does not touch the active column.
+	p.Active = existing.Active
 	m.plans[p.ID] = p
 	return nil
 }
@@ -145,6 +148,56 @@ func TestMealPlanService_Activate_onlyOnePlanActive(t *testing.T) {
 
 	p1, _ := svc.Get(ctx, plan1.ID, userID)
 	assert.False(t, p1.Active)
+}
+
+func TestMealPlanService_Update_publishesEvent_whenActive(t *testing.T) {
+	repo := newMockRepository()
+	bus := events.New()
+	svc := mealplan.NewService(repo, bus)
+	userID := uuid.New()
+	ctx := context.Background()
+
+	plan, err := svc.Create(ctx, userID, mealplan.CreateInput{Title: "Plan", Type: "Weekly"})
+	require.NoError(t, err)
+
+	_, err = svc.Activate(ctx, plan.ID, userID)
+	require.NoError(t, err)
+
+	var received events.Event
+	bus.Subscribe("plan.updated", func(_ context.Context, e events.Event) error {
+		received = e
+		return nil
+	})
+
+	_, err = svc.Update(ctx, plan.ID, userID, mealplan.CreateInput{Title: "Updated", Type: "Weekly"})
+	require.NoError(t, err)
+
+	require.NotNil(t, received)
+	evt := received.(mealplan.MealPlanUpdatedEvent)
+	assert.Equal(t, userID, evt.UserID)
+	assert.Equal(t, plan.ID, evt.MealPlanID)
+}
+
+func TestMealPlanService_Update_doesNotPublishEvent_whenNotActive(t *testing.T) {
+	repo := newMockRepository()
+	bus := events.New()
+	svc := mealplan.NewService(repo, bus)
+	userID := uuid.New()
+	ctx := context.Background()
+
+	plan, err := svc.Create(ctx, userID, mealplan.CreateInput{Title: "Plan", Type: "Weekly"})
+	require.NoError(t, err)
+
+	var received events.Event
+	bus.Subscribe("plan.updated", func(_ context.Context, e events.Event) error {
+		received = e
+		return nil
+	})
+
+	_, err = svc.Update(ctx, plan.ID, userID, mealplan.CreateInput{Title: "Updated", Type: "Weekly"})
+	require.NoError(t, err)
+
+	assert.Nil(t, received)
 }
 
 func TestMealPlanService_Delete_ownership(t *testing.T) {

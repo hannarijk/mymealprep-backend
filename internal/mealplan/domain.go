@@ -28,7 +28,8 @@ type PlanRecipe struct {
 	Section  string // "Breakfast" | "Lunch/Dinner"
 }
 
-// PlanActivatedEvent is published when a meal plan is set as active.
+// PlanActivatedEvent is published when a plan is set as the active plan —
+// either a brand-new plan or one reactivated from history.
 // The grocery domain subscribes to this to regenerate the grocery list.
 type PlanActivatedEvent struct {
 	UserID     uuid.UUID
@@ -36,3 +37,13 @@ type PlanActivatedEvent struct {
 }
 
 func (e PlanActivatedEvent) EventName() string { return "plan.activated" }
+
+// MealPlanUpdatedEvent is published when the content of the currently active
+// plan changes (e.g. recipes added or removed via PUT /meal-plans/:id).
+// The grocery domain subscribes to this to keep the grocery list in sync.
+type MealPlanUpdatedEvent struct {
+	UserID     uuid.UUID
+	MealPlanID uuid.UUID
+}
+
+func (e MealPlanUpdatedEvent) EventName() string { return "plan.updated" }

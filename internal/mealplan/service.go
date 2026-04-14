@@ -73,7 +73,19 @@ func (s *service) Update(ctx context.Context, id, userID uuid.UUID, input Create
 	if err := s.repo.Update(ctx, plan); err != nil {
 		return nil, err
 	}
-	return s.repo.FindByID(ctx, id, userID)
+
+	updated, err := s.repo.FindByID(ctx, id, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if updated.Active {
+		if err := s.bus.Publish(ctx, MealPlanUpdatedEvent{UserID: userID, MealPlanID: id}); err != nil {
+			return nil, fmt.Errorf("publish plan updated event: %w", err)
+		}
+	}
+
+	return updated, nil
 }
 
 func (s *service) Activate(ctx context.Context, id, userID uuid.UUID) (*MealPlan, error) {
