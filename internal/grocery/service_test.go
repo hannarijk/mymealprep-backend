@@ -104,6 +104,26 @@ func TestGroceryService_OnPlanActivated_regeneratesItems(t *testing.T) {
 	assert.Equal(t, "Oats", repo.items[0].Name)
 }
 
+func TestGroceryService_OnPlanUpdated_regeneratesItems(t *testing.T) {
+	userID := uuid.New()
+	planID := uuid.New()
+	list := &grocery.GroceryList{ID: uuid.New(), UserID: userID, MealPlanID: planID}
+	ingredients := []grocery.GroceryItem{
+		{ID: uuid.New(), Name: "Milk", Amount: "200ml", Department: "Dairy"},
+	}
+	repo := newMockRepo(list, ingredients)
+	bus := events.New()
+	grocery.NewService(repo, bus) // registers subscription
+
+	err := bus.Publish(context.Background(), mealplan.MealPlanUpdatedEvent{
+		UserID: userID, MealPlanID: planID,
+	})
+	require.NoError(t, err)
+
+	assert.Len(t, repo.items, 1)
+	assert.Equal(t, "Milk", repo.items[0].Name)
+}
+
 func TestGroceryService_Regenerate(t *testing.T) {
 	userID := uuid.New()
 	list := &grocery.GroceryList{ID: uuid.New(), UserID: userID, MealPlanID: uuid.New()}
