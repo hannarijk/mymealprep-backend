@@ -114,6 +114,37 @@ func TestMealPlanRepository_Activate(t *testing.T) {
 	})
 }
 
+func TestMealPlanRepository_Activate_reusedFlag(t *testing.T) {
+	pool := testhelper.NewTestDB(t)
+	repo := mealplan.NewRepository(pool)
+	userRepo := auth.NewUserRepository(pool)
+	user := seedUser(t, userRepo)
+	ctx := context.Background()
+
+	plan := newPlan(user.ID)
+	require.NoError(t, repo.Create(ctx, plan))
+
+	t.Run("reused is false on first activation", func(t *testing.T) {
+		require.NoError(t, repo.Activate(ctx, plan.ID, user.ID))
+		found, err := repo.FindByID(ctx, plan.ID, user.ID)
+		require.NoError(t, err)
+		assert.False(t, found.Reused)
+	})
+
+	t.Run("reused is true when reactivated from history", func(t *testing.T) {
+		// Deactivate by activating a second plan
+		plan2 := newPlan(user.ID)
+		require.NoError(t, repo.Create(ctx, plan2))
+		require.NoError(t, repo.Activate(ctx, plan2.ID, user.ID))
+
+		// Reactivate the first plan — it was previously activated so reused should be true
+		require.NoError(t, repo.Activate(ctx, plan.ID, user.ID))
+		found, err := repo.FindByID(ctx, plan.ID, user.ID)
+		require.NoError(t, err)
+		assert.True(t, found.Reused)
+	})
+}
+
 func TestMealPlanRepository_FindAll(t *testing.T) {
 	pool := testhelper.NewTestDB(t)
 	repo := mealplan.NewRepository(pool)

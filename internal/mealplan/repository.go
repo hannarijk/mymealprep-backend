@@ -169,9 +169,12 @@ func (r *postgresRepository) Activate(ctx context.Context, id, userID uuid.UUID)
 		return fmt.Errorf("deactivate current plan: %w", err)
 	}
 
-	// Activate the requested plan
+	// Activate the requested plan.
+	// reused is set to true if the plan was previously activated (activated_at IS NOT NULL),
+	// meaning it is being reactivated from history rather than activated for the first time.
 	tag, err := tx.Exec(ctx, `
-		UPDATE meal_plans SET active=true, activated_at=NOW()
+		UPDATE meal_plans
+		SET active=true, activated_at=NOW(), reused=(activated_at IS NOT NULL)
 		WHERE id=$1 AND user_id=$2`,
 		id, userID,
 	)
