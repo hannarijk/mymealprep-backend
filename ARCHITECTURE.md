@@ -141,6 +141,7 @@ All routes prefixed `/api/v1`. Auth routes are public; all others require `Autho
 |--------|------|---------|----------|
 | POST | `/auth/register` | `{email, password}` | `{token, user}` 201 |
 | POST | `/auth/login` | `{email, password}` | `{token, user}` 200 |
+| GET | `/auth/me` | — | `{user}` 200 — requires Bearer token |
 
 ### Recipes
 | Method | Path | Description |
@@ -185,31 +186,32 @@ All routes prefixed `/api/v1`. Auth routes are public; all others require `Autho
 mymealprep-backend/
 ├── cmd/
 │   └── server/
-│       └── main.go              # wires everything, starts HTTP server
+│       └── main.go              # entry point — loads config, connects DB, calls server.NewRouter
 ├── internal/
+│   ├── server/
+│   │   └── router.go            # wires all dependencies, registers all routes
 │   ├── auth/
 │   │   ├── domain.go            # User entity, Password value object, errors
 │   │   ├── repository.go        # UserRepository interface + pgx impl
 │   │   ├── service.go           # Register, Login, ValidateToken
-│   │   └── handler.go           # POST /auth/register, /auth/login
+│   │   └── handler.go           # POST /auth/register, /auth/login, GET /auth/me
 │   ├── recipe/
-│   │   ├── domain.go            # Recipe, Ingredient entities, errors
+│   │   ├── domain.go            # Recipe, Ingredient entities, RecipeUpdatedEvent, errors
 │   │   ├── repository.go        # RecipeRepository interface + pgx impl
-│   │   ├── service.go           # CRUD, Like/Unlike
+│   │   ├── service.go           # CRUD, Like/Unlike — publishes RecipeUpdatedEvent on ingredient change
 │   │   └── handler.go           # HTTP handlers
 │   ├── mealplan/
-│   │   ├── domain.go            # MealPlan, PlanUpdatedEvent
+│   │   ├── domain.go            # MealPlan, PlanActivatedEvent, MealPlanUpdatedEvent
 │   │   ├── repository.go        # MealPlanRepository interface + pgx impl
-│   │   ├── service.go           # Create, Activate, History — publishes PlanUpdatedEvent
+│   │   ├── service.go           # Create, Activate, History — publishes PlanActivatedEvent / MealPlanUpdatedEvent
 │   │   └── handler.go           # HTTP handlers
 │   ├── grocery/
 │   │   ├── domain.go            # GroceryList, GroceryItem, Department
 │   │   ├── repository.go        # GroceryRepository interface + pgx impl
-│   │   ├── service.go           # Generate, ToggleCheck, AddManual — subscribes to PlanUpdatedEvent
+│   │   ├── service.go           # Generate, ToggleCheck, AddManual — subscribes to plan + recipe events
 │   │   └── handler.go           # HTTP handlers
 │   ├── middleware/
-│   │   ├── auth.go              # JWT validation, inject userID into context
-│   │   └── logging.go           # slog request/response logging
+│   │   └── auth.go              # JWT validation, inject userID into context
 │   ├── events/
 │   │   └── bus.go               # Simple in-process synchronous event bus
 │   ├── db/
@@ -217,32 +219,35 @@ mymealprep-backend/
 │   │   └── migrations/          # SQL migration files (golang-migrate format)
 │   │       ├── 000001_create_users.up.sql
 │   │       ├── 000002_create_recipes.up.sql
-│   │       └── ...
+│   │       ├── 000003_create_meal_plans.up.sql
+│   │       └── 000004_create_grocery.up.sql
+│   ├── testhelper/
+│   │   ├── db.go                # NewTestDB(t) — spins up a Postgres testcontainer
+│   │   └── token.go             # MakeToken(t, userID) — mints a test JWT
 │   └── config/
 │       └── config.go            # Config struct, loads from env
+├── e2e/                         # end-to-end tests (//go:build e2e)
+│   ├── suite_test.go
+│   ├── helpers_test.go
+│   └── grocery_test.go
 ├── docker-compose.yml
 ├── Dockerfile
 ├── .env.example
 └── go.mod
 ```
 
-**Clean Architecture dependency rule:** `handler → service → repository → domain`. No cross-domain imports. The `grocery` service depends on `events.Bus`, not on `mealplan` package directly.
+**Clean Architecture dependency rule:** `handler → service → repository → domain`. No cross-domain imports. The `grocery` service depends on `events.Bus`, not on `mealplan` or `recipe` packages directly.
 
 ---
 
 ## 5. Internal Event Design
 
-**Decision — in-process sync bus for v1, not Kafka/SQS.** The only event that matters now is "plan changed → regenerate grocery." An async broker adds failure modes (at-least-once delivery, idempotency) with no benefit at this scale. The bus interface is swappable later.
+**Decision — in-process sync bus for v1, not Kafka/SQS.** The grocery list must regenerate whenever the active plan changes or a recipe's ingredients change. An async broker adds failure modes (at-least-once delivery, idempotency) with no benefit at this scale. The bus interface is swappable later.
 
 ```go
 // events/bus.go
 
 type Event interface{ EventName() string }
-
-type PlanUpdatedEvent struct {
-    UserID     uuid.UUID
-    MealPlanID uuid.UUID
-}
 
 type Handler func(ctx context.Context, event Event) error
 
@@ -251,6 +256,14 @@ type Bus interface {
     Subscribe(eventName string, handler Handler)
 }
 ```
+
+**Three events in v1:**
+
+| Event | Defined in | Published when | Subscribed by |
+|-------|-----------|----------------|---------------|
+| `PlanActivatedEvent` (`"plan.activated"`) | `mealplan/domain.go` | Plan set as active | `grocery.Service` |
+| `MealPlanUpdatedEvent` (`"plan.updated"`) | `mealplan/domain.go` | Recipe list of active plan changes | `grocery.Service` |
+| `RecipeUpdatedEvent` (`"recipe.updated"`) | `recipe/domain.go` | Recipe ingredients modified | `grocery.Service` |
 
 **Flow: Activate Plan → Regenerate Grocery**
 
@@ -266,8 +279,8 @@ sequenceDiagram
     C->>H: POST /meal-plans/:id/activate
     H->>MS: Activate(ctx, planID, userID)
     MS->>DB: UPDATE meal_plans SET active=true
-    MS->>B: Publish(PlanUpdatedEvent)
-    B->>GS: OnPlanUpdated(event)
+    MS->>B: Publish(PlanActivatedEvent)
+    B->>GS: OnPlanActivated(event)
     GS->>DB: SELECT ingredients JOIN plan_recipes
     GS->>DB: DELETE non-manual grocery items
     GS->>DB: INSERT regenerated items
