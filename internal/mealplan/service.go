@@ -10,11 +10,11 @@ import (
 
 type Service interface {
 	Create(ctx context.Context, userID uuid.UUID, input CreateInput) (*MealPlan, error)
+	Clone(ctx context.Context, sourceID, userID uuid.UUID, title string) (*MealPlan, error)
 	Get(ctx context.Context, id, userID uuid.UUID) (*MealPlan, error)
 	GetActive(ctx context.Context, userID uuid.UUID) (*MealPlan, error)
 	List(ctx context.Context, userID uuid.UUID, page, limit int) ([]*MealPlan, int, error)
 	Update(ctx context.Context, id, userID uuid.UUID, input CreateInput) (*MealPlan, error)
-	Activate(ctx context.Context, id, userID uuid.UUID) (*MealPlan, error)
 	Delete(ctx context.Context, id, userID uuid.UUID) error
 }
 
@@ -34,6 +34,8 @@ func NewService(repo Repository, bus *events.Bus) Service {
 	return &service{repo: repo, bus: bus}
 }
 
+// Create creates a new plan and immediately makes it the active plan.
+// Any previously active plan for the user is deactivated.
 func (s *service) Create(ctx context.Context, userID uuid.UUID, input CreateInput) (*MealPlan, error) {
 	plan := &MealPlan{
 		ID:      uuid.New(),
@@ -45,6 +47,42 @@ func (s *service) Create(ctx context.Context, userID uuid.UUID, input CreateInpu
 	}
 	if err := s.repo.Create(ctx, plan); err != nil {
 		return nil, err
+	}
+	if err := s.bus.Publish(ctx, PlanActivatedEvent{UserID: userID, MealPlanID: plan.ID}); err != nil {
+		return nil, fmt.Errorf("publish plan activated event: %w", err)
+	}
+	return plan, nil
+}
+
+// Clone copies a historical plan into a new active plan.
+// If title is empty the source plan's title is used.
+// The clone records which plan it was derived from via SourcePlanID.
+func (s *service) Clone(ctx context.Context, sourceID, userID uuid.UUID, title string) (*MealPlan, error) {
+	source, err := s.repo.FindByID(ctx, sourceID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if title == "" {
+		title = source.Title
+	}
+	recipes := make([]PlanRecipe, len(source.Recipes))
+	copy(recipes, source.Recipes)
+
+	srcID := source.ID
+	plan := &MealPlan{
+		ID:           uuid.New(),
+		UserID:       userID,
+		Title:        title,
+		Type:         source.Type,
+		Notes:        source.Notes,
+		Recipes:      recipes,
+		SourcePlanID: &srcID,
+	}
+	if err := s.repo.Create(ctx, plan); err != nil {
+		return nil, err
+	}
+	if err := s.bus.Publish(ctx, PlanActivatedEvent{UserID: userID, MealPlanID: plan.ID}); err != nil {
+		return nil, fmt.Errorf("publish plan activated event: %w", err)
 	}
 	return plan, nil
 }
@@ -86,18 +124,6 @@ func (s *service) Update(ctx context.Context, id, userID uuid.UUID, input Create
 	}
 
 	return updated, nil
-}
-
-func (s *service) Activate(ctx context.Context, id, userID uuid.UUID) (*MealPlan, error) {
-	if err := s.repo.Activate(ctx, id, userID); err != nil {
-		return nil, err
-	}
-
-	if err := s.bus.Publish(ctx, PlanActivatedEvent{UserID: userID, MealPlanID: id}); err != nil {
-		return nil, fmt.Errorf("publish plan activated event: %w", err)
-	}
-
-	return s.repo.FindByID(ctx, id, userID)
 }
 
 func (s *service) Delete(ctx context.Context, id, userID uuid.UUID) error {

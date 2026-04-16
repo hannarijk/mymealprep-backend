@@ -10,16 +10,15 @@ import (
 var ErrNotFound = errors.New("meal plan not found")
 
 type MealPlan struct {
-	ID          uuid.UUID
-	UserID      uuid.UUID
-	Title       string
-	Type        string // "Weekly" | "Biweekly"
-	Notes       string
-	Active      bool
-	Reused      bool
-	ActivatedAt *time.Time
-	Recipes     []PlanRecipe
-	CreatedAt   time.Time
+	ID           uuid.UUID
+	UserID       uuid.UUID
+	Title        string
+	Type         string // "Weekly" | "Biweekly"
+	Notes        string
+	Active       bool
+	SourcePlanID *uuid.UUID // set when cloned from a historical plan; nil for originals
+	Recipes      []PlanRecipe
+	CreatedAt    time.Time
 }
 
 // PlanRecipe is a recipe assigned to a meal plan with its section.
@@ -28,8 +27,8 @@ type PlanRecipe struct {
 	Section  string // "Breakfast" | "Lunch/Dinner"
 }
 
-// PlanActivatedEvent is published when a plan is set as the active plan —
-// either a brand-new plan or one reactivated from history.
+// PlanActivatedEvent is published when a new plan becomes the active one —
+// either by creation or by cloning from history.
 // The grocery domain subscribes to this to regenerate the grocery list.
 type PlanActivatedEvent struct {
 	UserID     uuid.UUID

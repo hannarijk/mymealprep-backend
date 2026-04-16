@@ -16,7 +16,6 @@ type Repository interface {
 	FindActive(ctx context.Context, userID uuid.UUID) (*MealPlan, error)
 	FindAll(ctx context.Context, userID uuid.UUID, page, limit int) ([]*MealPlan, int, error)
 	Update(ctx context.Context, plan *MealPlan) error
-	Activate(ctx context.Context, id, userID uuid.UUID) error
 	Delete(ctx context.Context, id, userID uuid.UUID) error
 }
 
@@ -35,10 +34,18 @@ func (r *postgresRepository) Create(ctx context.Context, plan *MealPlan) error {
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
+	// Deactivate any currently active plan for this user.
+	_, err = tx.Exec(ctx,
+		`UPDATE meal_plans SET active=false WHERE user_id=$1 AND active=true`, plan.UserID,
+	)
+	if err != nil {
+		return fmt.Errorf("deactivate current plan: %w", err)
+	}
+
 	_, err = tx.Exec(ctx, `
-		INSERT INTO meal_plans (id, user_id, title, type, notes, active, reused)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		plan.ID, plan.UserID, plan.Title, plan.Type, plan.Notes, plan.Active, plan.Reused,
+		INSERT INTO meal_plans (id, user_id, title, type, notes, active, source_plan_id)
+		VALUES ($1, $2, $3, $4, $5, true, $6)`,
+		plan.ID, plan.UserID, plan.Title, plan.Type, plan.Notes, plan.SourcePlanID,
 	)
 	if err != nil {
 		return fmt.Errorf("insert meal plan: %w", err)
@@ -53,7 +60,7 @@ func (r *postgresRepository) Create(ctx context.Context, plan *MealPlan) error {
 
 func (r *postgresRepository) FindByID(ctx context.Context, id, userID uuid.UUID) (*MealPlan, error) {
 	plan, err := r.scanPlan(ctx, r.db.QueryRow(ctx, `
-		SELECT id, user_id, title, type, notes, active, reused, activated_at, created_at
+		SELECT id, user_id, title, type, notes, active, source_plan_id, created_at
 		FROM meal_plans WHERE id = $1 AND user_id = $2`,
 		id, userID,
 	))
@@ -65,7 +72,7 @@ func (r *postgresRepository) FindByID(ctx context.Context, id, userID uuid.UUID)
 
 func (r *postgresRepository) FindActive(ctx context.Context, userID uuid.UUID) (*MealPlan, error) {
 	plan, err := r.scanPlan(ctx, r.db.QueryRow(ctx, `
-		SELECT id, user_id, title, type, notes, active, reused, activated_at, created_at
+		SELECT id, user_id, title, type, notes, active, source_plan_id, created_at
 		FROM meal_plans WHERE user_id = $1 AND active = true`,
 		userID,
 	))
@@ -93,7 +100,7 @@ func (r *postgresRepository) FindAll(ctx context.Context, userID uuid.UUID, page
 	}
 
 	rows, err := r.db.Query(ctx, `
-		SELECT id, user_id, title, type, notes, active, reused, activated_at, created_at
+		SELECT id, user_id, title, type, notes, active, source_plan_id, created_at
 		FROM meal_plans WHERE user_id = $1
 		ORDER BY created_at DESC
 		LIMIT $2 OFFSET $3`,
@@ -112,8 +119,10 @@ func (r *postgresRepository) FindAll(ctx context.Context, userID uuid.UUID, page
 		}
 		plans = append(plans, plan)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate meal plans: %w", err)
+	}
 
-	// Load recipe summaries (section counts) for the list view
 	for _, plan := range plans {
 		if _, err := r.loadRecipes(ctx, plan); err != nil {
 			return nil, 0, err
@@ -131,9 +140,9 @@ func (r *postgresRepository) Update(ctx context.Context, plan *MealPlan) error {
 	defer tx.Rollback(ctx) //nolint:errcheck
 
 	tag, err := tx.Exec(ctx, `
-		UPDATE meal_plans SET title=$3, type=$4, notes=$5, reused=$6
+		UPDATE meal_plans SET title=$3, type=$4, notes=$5
 		WHERE id=$1 AND user_id=$2`,
-		plan.ID, plan.UserID, plan.Title, plan.Type, plan.Notes, plan.Reused,
+		plan.ID, plan.UserID, plan.Title, plan.Type, plan.Notes,
 	)
 	if err != nil {
 		return fmt.Errorf("update meal plan: %w", err)
@@ -149,40 +158,6 @@ func (r *postgresRepository) Update(ctx context.Context, plan *MealPlan) error {
 
 	if err := insertPlanRecipes(ctx, tx, plan.ID, plan.Recipes); err != nil {
 		return err
-	}
-
-	return tx.Commit(ctx)
-}
-
-func (r *postgresRepository) Activate(ctx context.Context, id, userID uuid.UUID) error {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin transaction: %w", err)
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck
-
-	// Deactivate any currently active plan for this user
-	_, err = tx.Exec(ctx,
-		`UPDATE meal_plans SET active=false WHERE user_id=$1 AND active=true`, userID,
-	)
-	if err != nil {
-		return fmt.Errorf("deactivate current plan: %w", err)
-	}
-
-	// Activate the requested plan.
-	// reused is set to true if the plan was previously activated (activated_at IS NOT NULL),
-	// meaning it is being reactivated from history rather than activated for the first time.
-	tag, err := tx.Exec(ctx, `
-		UPDATE meal_plans
-		SET active=true, activated_at=NOW(), reused=(activated_at IS NOT NULL)
-		WHERE id=$1 AND user_id=$2`,
-		id, userID,
-	)
-	if err != nil {
-		return fmt.Errorf("activate plan: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrNotFound
 	}
 
 	return tx.Commit(ctx)
@@ -211,7 +186,7 @@ func (r *postgresRepository) scanPlan(_ context.Context, row scanner) (*MealPlan
 	plan := &MealPlan{}
 	err := row.Scan(
 		&plan.ID, &plan.UserID, &plan.Title, &plan.Type, &plan.Notes,
-		&plan.Active, &plan.Reused, &plan.ActivatedAt, &plan.CreatedAt,
+		&plan.Active, &plan.SourcePlanID, &plan.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
