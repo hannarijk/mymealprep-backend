@@ -62,9 +62,10 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret string) http.Handler {
 
 			r.Get("/meal-plans", mealPlanHandler.List)
 			r.Post("/meal-plans", mealPlanHandler.Create)
-			r.Get("/meal-plans/active", mealPlanHandler.GetActive)
+			r.Get("/meal-plans/active", mealPlanHandler.GetActive) // static — must precede {id}
+			r.Get("/meal-plans/{id}", mealPlanHandler.GetOne)
 			r.Put("/meal-plans/{id}", mealPlanHandler.Update)
-			r.Post("/meal-plans/{id}/activate", mealPlanHandler.Activate)
+			r.Post("/meal-plans/{id}/clone", mealPlanHandler.Clone)
 			r.Delete("/meal-plans/{id}", mealPlanHandler.Delete)
 
 			r.Get("/recipes", recipeHandler.List)

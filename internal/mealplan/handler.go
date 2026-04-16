@@ -36,22 +36,26 @@ type planRequest struct {
 	Recipes []planRecipeRequest `json:"recipes"`
 }
 
+type cloneRequest struct {
+	Title string `json:"title"` // optional; falls back to source plan's title
+}
+
 type planRecipeResponse struct {
 	RecipeID string `json:"recipeId"`
 	Section  string `json:"section"`
 }
 
 type planResponse struct {
-	ID         string               `json:"id"`
-	Title      string               `json:"title"`
-	Type       string               `json:"type"`
-	Notes      string               `json:"notes"`
-	Active     bool                 `json:"active"`
-	Reused     bool                 `json:"reused"`
-	Breakfasts int                  `json:"breakfasts"`
-	Mains      int                  `json:"mains"`
-	Recipes    []planRecipeResponse `json:"recipes"`
-	CreatedAt  string               `json:"createdAt"`
+	ID           string               `json:"id"`
+	Title        string               `json:"title"`
+	Type         string               `json:"type"`
+	Notes        string               `json:"notes"`
+	Active       bool                 `json:"active"`
+	SourcePlanID *string              `json:"sourcePlanId"`
+	Breakfasts   int                  `json:"breakfasts"`
+	Mains        int                  `json:"mains"`
+	Recipes      []planRecipeResponse `json:"recipes"`
+	CreatedAt    string               `json:"createdAt"`
 }
 
 type listResponse struct {
@@ -119,6 +123,26 @@ func (h *Handler) GetActive(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toResponse(plan))
 }
 
+func (h *Handler) GetOne(w http.ResponseWriter, r *http.Request) {
+	userID := mw.UserIDFromContext(r.Context())
+	id, ok := parseUUID(w, chi.URLParam(r, "id"))
+	if !ok {
+		return
+	}
+
+	plan, err := h.svc.Get(r.Context(), id, userID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeError(w, http.StatusNotFound, "meal plan not found")
+			return
+		}
+		slog.Error("get meal plan", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSON(w, http.StatusOK, toResponse(plan))
+}
+
 func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	userID := mw.UserIDFromContext(r.Context())
 	id, ok := parseUUID(w, chi.URLParam(r, "id"))
@@ -149,24 +173,27 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toResponse(plan))
 }
 
-func (h *Handler) Activate(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) Clone(w http.ResponseWriter, r *http.Request) {
 	userID := mw.UserIDFromContext(r.Context())
 	id, ok := parseUUID(w, chi.URLParam(r, "id"))
 	if !ok {
 		return
 	}
 
-	plan, err := h.svc.Activate(r.Context(), id, userID)
+	var req cloneRequest
+	_ = json.NewDecoder(r.Body).Decode(&req) // body is optional
+
+	plan, err := h.svc.Clone(r.Context(), id, userID, req.Title)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			writeError(w, http.StatusNotFound, "meal plan not found")
 			return
 		}
-		slog.Error("activate meal plan", "error", err)
+		slog.Error("clone meal plan", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	writeJSON(w, http.StatusOK, toResponse(plan))
+	writeJSON(w, http.StatusCreated, toResponse(plan))
 }
 
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -206,9 +233,12 @@ func toResponse(p *MealPlan) *planResponse {
 		Type:      p.Type,
 		Notes:     p.Notes,
 		Active:    p.Active,
-		Reused:    p.Reused,
 		CreatedAt: p.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		Recipes:   make([]planRecipeResponse, 0, len(p.Recipes)),
+	}
+	if p.SourcePlanID != nil {
+		s := p.SourcePlanID.String()
+		res.SourcePlanID = &s
 	}
 	for _, pr := range p.Recipes {
 		res.Recipes = append(res.Recipes, planRecipeResponse{
