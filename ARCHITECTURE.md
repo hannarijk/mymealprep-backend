@@ -80,12 +80,11 @@ erDiagram
     meal_plans {
         uuid id PK
         uuid user_id FK
+        uuid source_plan_id FK
         text title
         text type
         text notes
         bool active
-        bool reused
-        timestamptz activated_at
         timestamptz created_at
     }
 
@@ -158,10 +157,11 @@ All routes prefixed `/api/v1`. Auth routes are public; all others require `Autho
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/meal-plans` | List all plans — history (query: `page`, `limit`) |
-| POST | `/meal-plans` | Create new plan |
+| POST | `/meal-plans` | Create new plan — immediately becomes active; triggers grocery regeneration |
 | GET | `/meal-plans/active` | Get active plan with recipe IDs |
+| GET | `/meal-plans/:id` | Get a single plan by ID (full recipe list) |
 | PUT | `/meal-plans/:id` | Update plan metadata or recipe list |
-| POST | `/meal-plans/:id/activate` | Set as active (triggers grocery regeneration) |
+| POST | `/meal-plans/:id/clone` | Copy a historical plan into a new active plan (optional `title` in body); tracks source via `sourcePlanId` |
 | DELETE | `/meal-plans/:id` | Delete plan |
 
 ### Grocery
@@ -400,9 +400,9 @@ graph TD
 
 ### Stage 4 — Meal Plan Domain
 - `events/bus.go` (in-process bus)
-- `mealplan` package: MealPlan domain, repository, service (publishes `PlanUpdatedEvent` on activate), handler
-- All 6 meal plan endpoints including `/activate`
-- **Done when:** activating a plan publishes the event
+- `mealplan` package: MealPlan domain, repository, service, handler
+- All 7 meal plan endpoints; `POST /meal-plans` creates and immediately activates; `POST /meal-plans/:id/clone` copies a historical plan and activates the clone
+- **Done when:** creating a plan triggers grocery regeneration; cloning from history works end-to-end
 
 ### Stage 5 — Grocery Domain
 - `grocery` package: GroceryList + GroceryItem domain, repository, service (subscribes to `PlanUpdatedEvent`, auto-generates, handles manual items), handler

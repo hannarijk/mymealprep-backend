@@ -58,7 +58,9 @@
       "Bash(diff*)",
       "Bash(node*)",
       "Bash(npm*)",
-      "Bash(npx*)"
+      "Bash(npx*)",
+      "Bash(golangci-lint*)",
+      "Bash(command*)"
     ]
   }
 }

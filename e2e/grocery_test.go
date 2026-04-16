@@ -30,9 +30,10 @@ func createRecipe(t *testing.T, c *apiClient, ingredientName, department string)
 	return id
 }
 
-// createAndActivatePlan creates a meal plan containing the given recipe IDs and activates it.
+// createPlan creates a meal plan containing the given recipe IDs.
+// Creating a plan immediately makes it the active plan and triggers grocery regeneration.
 // Returns the plan ID.
-func createAndActivatePlan(t *testing.T, c *apiClient, recipeIDs ...string) string {
+func createPlan(t *testing.T, c *apiClient, recipeIDs ...string) string {
 	t.Helper()
 
 	recipes := make([]map[string]string, len(recipeIDs))
@@ -50,11 +51,6 @@ func createAndActivatePlan(t *testing.T, c *apiClient, recipeIDs ...string) stri
 	mustDecode(t, resp, &body)
 	planID, ok := body["id"].(string)
 	require.True(t, ok, "meal plan response missing id")
-
-	activateResp := c.Post(t, "/api/v1/meal-plans/"+planID+"/activate", nil)
-	mustStatus(t, activateResp, http.StatusOK)
-	activateResp.Body.Close()
-
 	return planID
 }
 
@@ -87,13 +83,13 @@ func itemNamesInDept(depts map[string]any, dept string) []string {
 	return names
 }
 
-// TestGrocery_FullCrossDomainFlow verifies that activating a meal plan triggers
+// TestGrocery_FullCrossDomainFlow verifies that creating a meal plan triggers
 // the event bus, which populates the grocery list with the plan's recipe ingredients.
 func TestGrocery_FullCrossDomainFlow(t *testing.T) {
 	c := registerUser(t)
 
 	recipeID := createRecipe(t, c, "Oats", "Pantry")
-	createAndActivatePlan(t, c, recipeID)
+	createPlan(t, c, recipeID)
 
 	depts := groceryDepartments(t, c)
 	assert.Contains(t, depts, "Pantry", "expected Pantry department in grocery list")
@@ -106,7 +102,7 @@ func TestGrocery_RecipeUpdateRegeneratesGrocery(t *testing.T) {
 	c := registerUser(t)
 
 	recipeID := createRecipe(t, c, "Oats", "Pantry")
-	createAndActivatePlan(t, c, recipeID)
+	createPlan(t, c, recipeID)
 
 	deptsBeforeUpdate := groceryDepartments(t, c)
 	assert.Contains(t, itemNamesInDept(deptsBeforeUpdate, "Pantry"), "Oats")
@@ -131,23 +127,64 @@ func TestGrocery_RecipeUpdateRegeneratesGrocery(t *testing.T) {
 		"old ingredient should be gone after recipe update")
 }
 
-// TestGrocery_SwitchingPlansUpdatesGrocery verifies that activating a second plan
+// TestGrocery_SwitchingPlansUpdatesGrocery verifies that creating a second plan
 // regenerates the grocery list to reflect the new plan's ingredients, not the old one's.
 func TestGrocery_SwitchingPlansUpdatesGrocery(t *testing.T) {
 	c := registerUser(t)
 
 	recipeA := createRecipe(t, c, "Spinach", "Produce")
-	createAndActivatePlan(t, c, recipeA)
+	createPlan(t, c, recipeA)
 
 	deptsAfterPlanA := groceryDepartments(t, c)
 	assert.Contains(t, itemNamesInDept(deptsAfterPlanA, "Produce"), "Spinach")
 
 	recipeB := createRecipe(t, c, "Chicken", "Meat")
-	createAndActivatePlan(t, c, recipeB)
+	createPlan(t, c, recipeB)
 
 	deptsAfterPlanB := groceryDepartments(t, c)
 	assert.Contains(t, deptsAfterPlanB, "Meat", "expected Meat department after switching plans")
 	assert.Contains(t, itemNamesInDept(deptsAfterPlanB, "Meat"), "Chicken")
 	assert.NotContains(t, itemNamesInDept(deptsAfterPlanB, "Produce"), "Spinach",
 		"Spinach from plan A should not appear after switching to plan B")
+}
+
+// TestGrocery_CloneFromHistory_RegeneratesGrocery verifies that cloning a historical
+// plan makes it the active plan and regenerates the grocery list from its recipes.
+func TestGrocery_CloneFromHistory_RegeneratesGrocery(t *testing.T) {
+	c := registerUser(t)
+
+	// Plan A: Salmon — becomes active
+	salmonRecipe := createRecipe(t, c, "Salmon", "Meat")
+	planAID := createPlan(t, c, salmonRecipe)
+
+	// Plan B: Broccoli — displaces plan A
+	broccoliRecipe := createRecipe(t, c, "Broccoli", "Produce")
+	createPlan(t, c, broccoliRecipe)
+
+	deptsAfterPlanB := groceryDepartments(t, c)
+	assert.Contains(t, itemNamesInDept(deptsAfterPlanB, "Produce"), "Broccoli")
+
+	// Clone plan A with a custom title — clone becomes active
+	cloneResp := c.Post(t, "/api/v1/meal-plans/"+planAID+"/clone",
+		map[string]string{"title": "Salmon Week Again"})
+	mustStatus(t, cloneResp, http.StatusCreated)
+	var cloneBody map[string]any
+	mustDecode(t, cloneResp, &cloneBody)
+
+	assert.Equal(t, planAID, cloneBody["sourcePlanId"], "clone must record its source plan")
+	assert.Equal(t, "Salmon Week Again", cloneBody["title"])
+
+	// Active plan must now be the clone
+	activeResp := c.Get(t, "/api/v1/meal-plans/active")
+	mustStatus(t, activeResp, http.StatusOK)
+	var activePlan map[string]any
+	mustDecode(t, activeResp, &activePlan)
+	assert.Equal(t, cloneBody["id"], activePlan["id"])
+
+	// Grocery must reflect the cloned plan's recipes (Salmon), not plan B's (Broccoli)
+	deptsAfterClone := groceryDepartments(t, c)
+	assert.Contains(t, itemNamesInDept(deptsAfterClone, "Meat"), "Salmon",
+		"grocery should contain Salmon from the cloned plan")
+	assert.NotContains(t, itemNamesInDept(deptsAfterClone, "Produce"), "Broccoli",
+		"Broccoli from plan B should be gone after cloning plan A")
 }
