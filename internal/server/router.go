@@ -8,8 +8,8 @@ import (
 	"github.com/ppnati33/mymealprep-backend/internal/auth"
 	"github.com/ppnati33/mymealprep-backend/internal/events"
 	"github.com/ppnati33/mymealprep-backend/internal/grocery"
-	mw "github.com/ppnati33/mymealprep-backend/internal/middleware"
 	"github.com/ppnati33/mymealprep-backend/internal/mealplan"
+	mw "github.com/ppnati33/mymealprep-backend/internal/middleware"
 	"github.com/ppnati33/mymealprep-backend/internal/recipe"
 )
 
@@ -39,11 +39,11 @@ func NewRouter(pool *pgxpool.Pool, jwtSecret string) http.Handler {
 			if err := pool.Ping(r.Context()); err != nil {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusServiceUnavailable)
-				w.Write([]byte(`{"status":"error","db":"unreachable"}`))
+				_, _ = w.Write([]byte(`{"status":"error","db":"unreachable"}`))
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"status":"ok","db":"ok"}`))
+			_, _ = w.Write([]byte(`{"status":"ok","db":"ok"}`))
 		})
 
 		r.Post("/auth/register", authHandler.Register)

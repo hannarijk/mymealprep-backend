@@ -33,7 +33,7 @@ func (r *postgresRepository) Create(ctx context.Context, recipe *Recipe) error {
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	_, err = tx.Exec(ctx, `
 		INSERT INTO recipes (id, user_id, name, section, tags, time_minutes, servings, why, image_url, steps)
@@ -139,7 +139,7 @@ func (r *postgresRepository) Update(ctx context.Context, recipe *Recipe) error {
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	tag, err := tx.Exec(ctx, `
 		UPDATE recipes

@@ -20,10 +20,10 @@ import (
 
 // mockService is a controllable Service for handler tests.
 type mockService struct {
-	plan    *mealplan.MealPlan
-	plans   []*mealplan.MealPlan
-	total   int
-	svcErr  error
+	plan   *mealplan.MealPlan
+	plans  []*mealplan.MealPlan
+	total  int
+	svcErr error
 }
 
 func (m *mockService) Create(_ context.Context, _ uuid.UUID, _ mealplan.CreateInput) (*mealplan.MealPlan, error) {
@@ -71,7 +71,7 @@ func testPlan(userID uuid.UUID) *mealplan.MealPlan {
 	return &mealplan.MealPlan{
 		ID: uuid.New(), UserID: userID,
 		Title: "Week 1", Type: "Weekly",
-		Recipes: []mealplan.PlanRecipe{},
+		Recipes:   []mealplan.PlanRecipe{},
 		CreatedAt: time.Now(),
 	}
 }

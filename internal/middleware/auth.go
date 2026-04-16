@@ -66,5 +66,5 @@ func UserIDFromContext(ctx context.Context) uuid.UUID {
 func writeUnauthorized(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
-	w.Write([]byte(`{"error":"unauthorized"}`))
+	_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
 }

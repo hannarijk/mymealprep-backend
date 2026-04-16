@@ -245,9 +245,7 @@ func toCreateInput(req recipeRequest) CreateInput {
 		Why: req.Why, ImageURL: req.ImageURL, Steps: req.Steps,
 	}
 	for _, ing := range req.Ingredients {
-		input.Ingredients = append(input.Ingredients, IngredientInput{
-			Name: ing.Name, Amount: ing.Amount, Department: ing.Department,
-		})
+		input.Ingredients = append(input.Ingredients, IngredientInput(ing))
 	}
 	return input
 }

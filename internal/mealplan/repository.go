@@ -33,7 +33,7 @@ func (r *postgresRepository) Create(ctx context.Context, plan *MealPlan) error {
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	_, err = tx.Exec(ctx, `
 		INSERT INTO meal_plans (id, user_id, title, type, notes, active, reused)
@@ -128,7 +128,7 @@ func (r *postgresRepository) Update(ctx context.Context, plan *MealPlan) error {
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	tag, err := tx.Exec(ctx, `
 		UPDATE meal_plans SET title=$3, type=$4, notes=$5, reused=$6
@@ -159,7 +159,7 @@ func (r *postgresRepository) Activate(ctx context.Context, id, userID uuid.UUID)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	// Deactivate any currently active plan for this user
 	_, err = tx.Exec(ctx,

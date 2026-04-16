@@ -103,7 +103,7 @@ func (r *postgresRepository) ReplaceItems(ctx context.Context, listID uuid.UUID,
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	_, err = tx.Exec(ctx,
 		`DELETE FROM grocery_items WHERE grocery_list_id = $1 AND manual = false`, listID,

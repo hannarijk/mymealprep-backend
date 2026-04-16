@@ -20,9 +20,9 @@ import (
 
 // mockService is a controllable grocery.Service for handler tests.
 type mockService struct {
-	list    *grocery.GroceryList
-	item    *grocery.GroceryItem
-	svcErr  error
+	list   *grocery.GroceryList
+	item   *grocery.GroceryItem
+	svcErr error
 }
 
 func (m *mockService) GetForActivePlan(_ context.Context, _ uuid.UUID) (*grocery.GroceryList, error) {

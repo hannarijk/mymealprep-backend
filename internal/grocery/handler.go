@@ -112,9 +112,7 @@ func (h *Handler) AddItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item, err := h.svc.AddItem(r.Context(), userID, AddItemInput{
-		Name: req.Name, Amount: req.Amount, Department: req.Department,
-	})
+	item, err := h.svc.AddItem(r.Context(), userID, AddItemInput(req))
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			writeError(w, http.StatusNotFound, "no active grocery list — activate a meal plan first")

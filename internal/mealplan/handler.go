@@ -42,16 +42,16 @@ type planRecipeResponse struct {
 }
 
 type planResponse struct {
-	ID          string               `json:"id"`
-	Title       string               `json:"title"`
-	Type        string               `json:"type"`
-	Notes       string               `json:"notes"`
-	Active      bool                 `json:"active"`
-	Reused      bool                 `json:"reused"`
-	Breakfasts  int                  `json:"breakfasts"`
-	Mains       int                  `json:"mains"`
-	Recipes     []planRecipeResponse `json:"recipes"`
-	CreatedAt   string               `json:"createdAt"`
+	ID         string               `json:"id"`
+	Title      string               `json:"title"`
+	Type       string               `json:"type"`
+	Notes      string               `json:"notes"`
+	Active     bool                 `json:"active"`
+	Reused     bool                 `json:"reused"`
+	Breakfasts int                  `json:"breakfasts"`
+	Mains      int                  `json:"mains"`
+	Recipes    []planRecipeResponse `json:"recipes"`
+	CreatedAt  string               `json:"createdAt"`
 }
 
 type listResponse struct {
@@ -193,7 +193,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 func toCreateInput(req planRequest) CreateInput {
 	input := CreateInput{Title: req.Title, Type: req.Type, Notes: req.Notes}
 	for _, r := range req.Recipes {
-		id, _ := uuid.Parse(r.RecipeID)
+		id, _ := uuid.Parse(r.RecipeID) //nolint:errcheck // validated upstream by validator:"uuid"
 		input.Recipes = append(input.Recipes, PlanRecipe{RecipeID: id, Section: r.Section})
 	}
 	return input

@@ -49,7 +49,7 @@ func NewTestDBForSuite() (*pgxpool.Pool, func()) {
 
 	cleanup := func() {
 		pool.Close()
-		ctr.Terminate(ctx)
+		_ = ctr.Terminate(ctx)
 	}
 	return pool, cleanup
 }
@@ -75,7 +75,7 @@ func NewTestDB(t *testing.T) *pgxpool.Pool {
 	if err != nil {
 		t.Fatalf("start postgres container: %v", err)
 	}
-	t.Cleanup(func() { ctr.Terminate(ctx) })
+	t.Cleanup(func() { _ = ctr.Terminate(ctx) })
 
 	connStr, err := ctr.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {

@@ -40,7 +40,7 @@ func TestRecipeHandler_List(t *testing.T) {
 	h := recipe.NewHandler(recipe.NewService(repo, events.New()))
 
 	// Seed a recipe
-	repo.Create(context.Background(), &recipe.Recipe{
+	_ = repo.Create(context.Background(), &recipe.Recipe{
 		ID: uuid.New(), UserID: userID, Name: "Oatmeal", Section: "Breakfast",
 		Tags: []string{}, Steps: []string{}, TimeMinutes: 10, Servings: 1,
 	})
@@ -91,7 +91,7 @@ func TestRecipeHandler_Get(t *testing.T) {
 		ID: uuid.New(), UserID: userID, Name: "Oatmeal", Section: "Breakfast",
 		Tags: []string{}, Steps: []string{}, TimeMinutes: 10, Servings: 1,
 	}
-	repo.Create(context.Background(), r)
+	_ = repo.Create(context.Background(), r)
 
 	t.Run("200 for existing recipe", func(t *testing.T) {
 		req := authenticatedRequest(t, http.MethodGet, "/recipes/"+r.ID.String(), nil, userID)
@@ -125,7 +125,7 @@ func TestRecipeHandler_Delete(t *testing.T) {
 		ID: uuid.New(), UserID: userID, Name: "Oatmeal", Section: "Breakfast",
 		Tags: []string{}, Steps: []string{}, TimeMinutes: 10, Servings: 1,
 	}
-	repo.Create(context.Background(), r)
+	_ = repo.Create(context.Background(), r)
 
 	req := authenticatedRequest(t, http.MethodDelete, "/recipes/"+r.ID.String(), nil, userID)
 	rctx := chi.NewRouteContext()
