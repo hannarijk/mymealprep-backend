@@ -25,7 +25,15 @@ func newMockRepository() *mockRepository {
 }
 
 func (m *mockRepository) Create(_ context.Context, p *mealplan.MealPlan) error {
+	// Deactivate any existing active plan for this user.
+	if prevID, exists := m.active[p.UserID]; exists {
+		if prev, ok := m.plans[prevID]; ok {
+			prev.Active = false
+		}
+	}
+	p.Active = true
 	m.plans[p.ID] = p
+	m.active[p.UserID] = p.ID
 	return nil
 }
 
@@ -66,20 +74,6 @@ func (m *mockRepository) Update(_ context.Context, p *mealplan.MealPlan) error {
 	return nil
 }
 
-func (m *mockRepository) Activate(_ context.Context, id, userID uuid.UUID) error {
-	p, ok := m.plans[id]
-	if !ok || p.UserID != userID {
-		return mealplan.ErrNotFound
-	}
-	// Deactivate previous
-	if prevID, exists := m.active[userID]; exists {
-		m.plans[prevID].Active = false
-	}
-	p.Active = true
-	m.active[userID] = id
-	return nil
-}
-
 func (m *mockRepository) Delete(_ context.Context, id, userID uuid.UUID) error {
 	p, ok := m.plans[id]
 	if !ok || p.UserID != userID {
@@ -90,6 +84,7 @@ func (m *mockRepository) Delete(_ context.Context, id, userID uuid.UUID) error {
 }
 
 func TestMealPlanService_Create(t *testing.T) {
+	t.Parallel()
 	svc := mealplan.NewService(newMockRepository(), events.New())
 	userID := uuid.New()
 
@@ -100,17 +95,17 @@ func TestMealPlanService_Create(t *testing.T) {
 	assert.NotEqual(t, uuid.Nil, plan.ID)
 	assert.Equal(t, userID, plan.UserID)
 	assert.Equal(t, "Week 1", plan.Title)
+	assert.True(t, plan.Active)
+	assert.Nil(t, plan.SourcePlanID)
 }
 
-func TestMealPlanService_Activate_publishesEvent(t *testing.T) {
+func TestMealPlanService_Create_publishesEvent(t *testing.T) {
+	t.Parallel()
 	repo := newMockRepository()
 	bus := events.New()
 	svc := mealplan.NewService(repo, bus)
 	userID := uuid.New()
 	ctx := context.Background()
-
-	plan, err := svc.Create(ctx, userID, mealplan.CreateInput{Title: "Plan", Type: "Weekly"})
-	require.NoError(t, err)
 
 	var received events.Event
 	bus.Subscribe("plan.activated", func(_ context.Context, e events.Event) error {
@@ -118,7 +113,7 @@ func TestMealPlanService_Activate_publishesEvent(t *testing.T) {
 		return nil
 	})
 
-	_, err = svc.Activate(ctx, plan.ID, userID)
+	plan, err := svc.Create(ctx, userID, mealplan.CreateInput{Title: "Plan", Type: "Weekly"})
 	require.NoError(t, err)
 
 	require.NotNil(t, received)
@@ -127,40 +122,134 @@ func TestMealPlanService_Activate_publishesEvent(t *testing.T) {
 	assert.Equal(t, plan.ID, evt.MealPlanID)
 }
 
-func TestMealPlanService_Activate_onlyOnePlanActive(t *testing.T) {
+func TestMealPlanService_Create_onlyOnePlanActive(t *testing.T) {
+	t.Parallel()
 	repo := newMockRepository()
 	svc := mealplan.NewService(repo, events.New())
 	userID := uuid.New()
 	ctx := context.Background()
 
-	plan1, _ := svc.Create(ctx, userID, mealplan.CreateInput{Title: "P1", Type: "Weekly"})
-	plan2, _ := svc.Create(ctx, userID, mealplan.CreateInput{Title: "P2", Type: "Weekly"})
-
-	_, err := svc.Activate(ctx, plan1.ID, userID)
+	plan1, err := svc.Create(ctx, userID, mealplan.CreateInput{Title: "P1", Type: "Weekly"})
 	require.NoError(t, err)
 
-	_, err = svc.Activate(ctx, plan2.ID, userID)
+	plan2, err := svc.Create(ctx, userID, mealplan.CreateInput{Title: "P2", Type: "Weekly"})
 	require.NoError(t, err)
 
 	active, err := svc.GetActive(ctx, userID)
 	require.NoError(t, err)
 	assert.Equal(t, plan2.ID, active.ID)
 
-	p1, _ := svc.Get(ctx, plan1.ID, userID)
+	p1, err := svc.Get(ctx, plan1.ID, userID)
+	require.NoError(t, err)
 	assert.False(t, p1.Active)
 }
 
+func TestMealPlanService_Clone(t *testing.T) {
+	t.Parallel()
+
+	t.Run("copies fields and sets SourcePlanID", func(t *testing.T) {
+		t.Parallel()
+		svc := mealplan.NewService(newMockRepository(), events.New())
+		userID := uuid.New()
+		ctx := context.Background()
+
+		recipeID := uuid.New()
+		source, err := svc.Create(ctx, userID, mealplan.CreateInput{
+			Title: "Week 1", Type: "Weekly", Notes: "eat well",
+			Recipes: []mealplan.PlanRecipe{{RecipeID: recipeID, Section: "Breakfast"}},
+		})
+		require.NoError(t, err)
+
+		clone, err := svc.Clone(ctx, source.ID, userID, "My Custom Title")
+		require.NoError(t, err)
+
+		assert.NotEqual(t, source.ID, clone.ID)
+		assert.Equal(t, "My Custom Title", clone.Title)
+		assert.Equal(t, source.Type, clone.Type)
+		assert.Equal(t, source.Notes, clone.Notes)
+		assert.Equal(t, source.Recipes, clone.Recipes)
+		require.NotNil(t, clone.SourcePlanID)
+		assert.Equal(t, source.ID, *clone.SourcePlanID)
+		assert.True(t, clone.Active)
+	})
+
+	t.Run("falls back to source title when title is empty", func(t *testing.T) {
+		t.Parallel()
+		svc := mealplan.NewService(newMockRepository(), events.New())
+		userID := uuid.New()
+		ctx := context.Background()
+
+		source, err := svc.Create(ctx, userID, mealplan.CreateInput{Title: "Week 1", Type: "Weekly"})
+		require.NoError(t, err)
+
+		clone, err := svc.Clone(ctx, source.ID, userID, "")
+		require.NoError(t, err)
+		assert.Equal(t, source.Title, clone.Title)
+	})
+
+	t.Run("clone becomes the active plan", func(t *testing.T) {
+		t.Parallel()
+		svc := mealplan.NewService(newMockRepository(), events.New())
+		userID := uuid.New()
+		ctx := context.Background()
+
+		source, err := svc.Create(ctx, userID, mealplan.CreateInput{Title: "Week 1", Type: "Weekly"})
+		require.NoError(t, err)
+
+		clone, err := svc.Clone(ctx, source.ID, userID, "Week 2")
+		require.NoError(t, err)
+
+		active, err := svc.GetActive(ctx, userID)
+		require.NoError(t, err)
+		assert.Equal(t, clone.ID, active.ID)
+
+		old, err := svc.Get(ctx, source.ID, userID)
+		require.NoError(t, err)
+		assert.False(t, old.Active)
+	})
+
+	t.Run("publishes PlanActivatedEvent", func(t *testing.T) {
+		t.Parallel()
+		bus := events.New()
+		svc := mealplan.NewService(newMockRepository(), bus)
+		userID := uuid.New()
+		ctx := context.Background()
+
+		source, err := svc.Create(ctx, userID, mealplan.CreateInput{Title: "Plan", Type: "Weekly"})
+		require.NoError(t, err)
+
+		var received events.Event
+		bus.Subscribe("plan.activated", func(_ context.Context, e events.Event) error {
+			received = e
+			return nil
+		})
+
+		clone, err := svc.Clone(ctx, source.ID, userID, "")
+		require.NoError(t, err)
+
+		require.NotNil(t, received)
+		evt := received.(mealplan.PlanActivatedEvent)
+		assert.Equal(t, clone.ID, evt.MealPlanID)
+	})
+
+	t.Run("returns ErrNotFound for unknown source", func(t *testing.T) {
+		t.Parallel()
+		svc := mealplan.NewService(newMockRepository(), events.New())
+		_, err := svc.Clone(context.Background(), uuid.New(), uuid.New(), "")
+		assert.ErrorIs(t, err, mealplan.ErrNotFound)
+	})
+}
+
 func TestMealPlanService_Update_publishesEvent_whenActive(t *testing.T) {
+	t.Parallel()
 	repo := newMockRepository()
 	bus := events.New()
 	svc := mealplan.NewService(repo, bus)
 	userID := uuid.New()
 	ctx := context.Background()
 
+	// Create makes the plan active immediately.
 	plan, err := svc.Create(ctx, userID, mealplan.CreateInput{Title: "Plan", Type: "Weekly"})
-	require.NoError(t, err)
-
-	_, err = svc.Activate(ctx, plan.ID, userID)
 	require.NoError(t, err)
 
 	var received events.Event
@@ -179,13 +268,18 @@ func TestMealPlanService_Update_publishesEvent_whenActive(t *testing.T) {
 }
 
 func TestMealPlanService_Update_doesNotPublishEvent_whenNotActive(t *testing.T) {
+	t.Parallel()
 	repo := newMockRepository()
 	bus := events.New()
 	svc := mealplan.NewService(repo, bus)
 	userID := uuid.New()
 	ctx := context.Background()
 
-	plan, err := svc.Create(ctx, userID, mealplan.CreateInput{Title: "Plan", Type: "Weekly"})
+	// plan1 becomes active on create, then plan2 creates and deactivates plan1.
+	plan1, err := svc.Create(ctx, userID, mealplan.CreateInput{Title: "Plan 1", Type: "Weekly"})
+	require.NoError(t, err)
+
+	_, err = svc.Create(ctx, userID, mealplan.CreateInput{Title: "Plan 2", Type: "Weekly"})
 	require.NoError(t, err)
 
 	var received events.Event
@@ -194,13 +288,22 @@ func TestMealPlanService_Update_doesNotPublishEvent_whenNotActive(t *testing.T) 
 		return nil
 	})
 
-	_, err = svc.Update(ctx, plan.ID, userID, mealplan.CreateInput{Title: "Updated", Type: "Weekly"})
+	// Updating the inactive plan1 should not publish an event.
+	_, err = svc.Update(ctx, plan1.ID, userID, mealplan.CreateInput{Title: "Updated", Type: "Weekly"})
 	require.NoError(t, err)
 
 	assert.Nil(t, received)
 }
 
+func TestMealPlanService_Update_ErrNotFound(t *testing.T) {
+	t.Parallel()
+	svc := mealplan.NewService(newMockRepository(), events.New())
+	_, err := svc.Update(context.Background(), uuid.New(), uuid.New(), mealplan.CreateInput{Title: "X", Type: "Weekly"})
+	assert.ErrorIs(t, err, mealplan.ErrNotFound)
+}
+
 func TestMealPlanService_Delete_ownership(t *testing.T) {
+	t.Parallel()
 	svc := mealplan.NewService(newMockRepository(), events.New())
 	ownerID, otherID := uuid.New(), uuid.New()
 	ctx := context.Background()

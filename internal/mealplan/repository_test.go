@@ -51,6 +51,47 @@ func TestMealPlanRepository_Create(t *testing.T) {
 
 	plan := newPlan(user.ID, mealplan.PlanRecipe{RecipeID: rec.ID, Section: "Breakfast"})
 	require.NoError(t, repo.Create(ctx, plan))
+
+	t.Run("new plan is immediately active", func(t *testing.T) {
+		found, err := repo.FindByID(ctx, plan.ID, user.ID)
+		require.NoError(t, err)
+		assert.True(t, found.Active)
+		assert.Nil(t, found.SourcePlanID)
+	})
+
+	t.Run("second plan deactivates the first", func(t *testing.T) {
+		plan2 := newPlan(user.ID)
+		require.NoError(t, repo.Create(ctx, plan2))
+
+		active, err := repo.FindActive(ctx, user.ID)
+		require.NoError(t, err)
+		assert.Equal(t, plan2.ID, active.ID)
+
+		deactivated, err := repo.FindByID(ctx, plan.ID, user.ID)
+		require.NoError(t, err)
+		assert.False(t, deactivated.Active)
+	})
+}
+
+func TestMealPlanRepository_Create_withSourcePlanID(t *testing.T) {
+	pool := testhelper.NewTestDB(t)
+	repo := mealplan.NewRepository(pool)
+	userRepo := auth.NewUserRepository(pool)
+	user := seedUser(t, userRepo)
+	ctx := context.Background()
+
+	source := newPlan(user.ID)
+	require.NoError(t, repo.Create(ctx, source))
+
+	srcID := source.ID
+	clone := newPlan(user.ID)
+	clone.SourcePlanID = &srcID
+	require.NoError(t, repo.Create(ctx, clone))
+
+	found, err := repo.FindByID(ctx, clone.ID, user.ID)
+	require.NoError(t, err)
+	require.NotNil(t, found.SourcePlanID)
+	assert.Equal(t, source.ID, *found.SourcePlanID)
 }
 
 func TestMealPlanRepository_FindByID(t *testing.T) {
@@ -76,74 +117,6 @@ func TestMealPlanRepository_FindByID(t *testing.T) {
 	t.Run("returns ErrNotFound for wrong user", func(t *testing.T) {
 		_, err := repo.FindByID(ctx, plan.ID, uuid.New())
 		assert.ErrorIs(t, err, mealplan.ErrNotFound)
-	})
-}
-
-func TestMealPlanRepository_Activate(t *testing.T) {
-	pool := testhelper.NewTestDB(t)
-	repo := mealplan.NewRepository(pool)
-	userRepo := auth.NewUserRepository(pool)
-	user := seedUser(t, userRepo)
-	ctx := context.Background()
-
-	plan1 := newPlan(user.ID)
-	plan2 := newPlan(user.ID)
-	require.NoError(t, repo.Create(ctx, plan1))
-	require.NoError(t, repo.Create(ctx, plan2))
-
-	t.Run("activates a plan", func(t *testing.T) {
-		require.NoError(t, repo.Activate(ctx, plan1.ID, user.ID))
-		found, err := repo.FindActive(ctx, user.ID)
-		require.NoError(t, err)
-		assert.Equal(t, plan1.ID, found.ID)
-	})
-
-	t.Run("only one plan is active at a time", func(t *testing.T) {
-		require.NoError(t, repo.Activate(ctx, plan2.ID, user.ID))
-
-		active, err := repo.FindActive(ctx, user.ID)
-		require.NoError(t, err)
-		assert.Equal(t, plan2.ID, active.ID)
-
-		deactivated, err := repo.FindByID(ctx, plan1.ID, user.ID)
-		require.NoError(t, err)
-		assert.False(t, deactivated.Active)
-	})
-
-	t.Run("returns ErrNotFound for unknown plan", func(t *testing.T) {
-		err := repo.Activate(ctx, uuid.New(), user.ID)
-		assert.ErrorIs(t, err, mealplan.ErrNotFound)
-	})
-}
-
-func TestMealPlanRepository_Activate_reusedFlag(t *testing.T) {
-	pool := testhelper.NewTestDB(t)
-	repo := mealplan.NewRepository(pool)
-	userRepo := auth.NewUserRepository(pool)
-	user := seedUser(t, userRepo)
-	ctx := context.Background()
-
-	plan := newPlan(user.ID)
-	require.NoError(t, repo.Create(ctx, plan))
-
-	t.Run("reused is false on first activation", func(t *testing.T) {
-		require.NoError(t, repo.Activate(ctx, plan.ID, user.ID))
-		found, err := repo.FindByID(ctx, plan.ID, user.ID)
-		require.NoError(t, err)
-		assert.False(t, found.Reused)
-	})
-
-	t.Run("reused is true when reactivated from history", func(t *testing.T) {
-		// Deactivate by activating a second plan
-		plan2 := newPlan(user.ID)
-		require.NoError(t, repo.Create(ctx, plan2))
-		require.NoError(t, repo.Activate(ctx, plan2.ID, user.ID))
-
-		// Reactivate the first plan — it was previously activated so reused should be true
-		require.NoError(t, repo.Activate(ctx, plan.ID, user.ID))
-		found, err := repo.FindByID(ctx, plan.ID, user.ID)
-		require.NoError(t, err)
-		assert.True(t, found.Reused)
 	})
 }
 
@@ -191,6 +164,35 @@ func TestMealPlanRepository_Update(t *testing.T) {
 	assert.Equal(t, "Updated Title", found.Title)
 }
 
+func TestMealPlanRepository_FindByID_UnknownID(t *testing.T) {
+	pool := testhelper.NewTestDB(t)
+	repo := mealplan.NewRepository(pool)
+	userRepo := auth.NewUserRepository(pool)
+	user := seedUser(t, userRepo)
+
+	_, err := repo.FindByID(context.Background(), uuid.New(), user.ID)
+	assert.ErrorIs(t, err, mealplan.ErrNotFound)
+}
+
+func TestMealPlanRepository_FindActive_NoActivePlan(t *testing.T) {
+	pool := testhelper.NewTestDB(t)
+	repo := mealplan.NewRepository(pool)
+	userRepo := auth.NewUserRepository(pool)
+	user := seedUser(t, userRepo)
+
+	_, err := repo.FindActive(context.Background(), user.ID)
+	assert.ErrorIs(t, err, mealplan.ErrNotFound)
+}
+
+func TestMealPlanRepository_Update_ErrNotFound(t *testing.T) {
+	pool := testhelper.NewTestDB(t)
+	repo := mealplan.NewRepository(pool)
+
+	plan := &mealplan.MealPlan{ID: uuid.New(), UserID: uuid.New(), Title: "X", Type: "Weekly"}
+	err := repo.Update(context.Background(), plan)
+	assert.ErrorIs(t, err, mealplan.ErrNotFound)
+}
+
 func TestMealPlanRepository_Delete(t *testing.T) {
 	pool := testhelper.NewTestDB(t)
 	repo := mealplan.NewRepository(pool)
@@ -203,5 +205,19 @@ func TestMealPlanRepository_Delete(t *testing.T) {
 	require.NoError(t, repo.Delete(ctx, plan.ID, user.ID))
 
 	_, err := repo.FindByID(ctx, plan.ID, user.ID)
+	assert.ErrorIs(t, err, mealplan.ErrNotFound)
+}
+
+func TestMealPlanRepository_Delete_WrongUser(t *testing.T) {
+	pool := testhelper.NewTestDB(t)
+	repo := mealplan.NewRepository(pool)
+	userRepo := auth.NewUserRepository(pool)
+	user := seedUser(t, userRepo)
+	ctx := context.Background()
+
+	plan := newPlan(user.ID)
+	require.NoError(t, repo.Create(ctx, plan))
+
+	err := repo.Delete(ctx, plan.ID, uuid.New())
 	assert.ErrorIs(t, err, mealplan.ErrNotFound)
 }
