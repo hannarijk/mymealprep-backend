@@ -1,0 +1,64 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "gofmt -w ."
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v golangci-lint > /dev/null && golangci-lint run ./... || echo '[warn] golangci-lint not installed — run: brew install golangci-lint'; go test -count=1 ./..."
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch",
+      "Bash(go build*)",
+      "Bash(go test*)",
+      "Bash(go vet*)",
+      "Bash(go run ./cmd/server*)",
+      "Bash(gofmt*)",
+      "Bash(docker compose*)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(source*)",
+      "Bash(export*)",
+      "Bash(curl*)",
+      "Bash(jq*)",
+      "Bash(cat*)",
+      "Bash(ls*)",
+      "Bash(grep*)",
+      "Bash(echo*)",
+      "Bash(which*)",
+      "Bash(wc*)",
+      "Bash(file*)",
+      "Bash(pwd*)",
+      "Bash(mkdir*)",
+      "Bash(touch*)",
+      "Bash(head*)",
+      "Bash(tail*)",
+      "Bash(find*)",
+      "Bash(sort*)",
+      "Bash(tree*)",
+      "Bash(diff*)",
+      "Bash(node*)",
+      "Bash(npm*)",
+      "Bash(npx*)"
+    ]
+  }
+}

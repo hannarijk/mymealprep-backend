@@ -1,0 +1,35 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck      # catches ignored errors — critical for pgx
+    - govet         # same as go vet
+    - staticcheck   # strong static analysis; includes gosimple + unused checks
+
+formatters:
+  enable:
+    - goimports     # enforces import grouping and formatting
+
+issues:
+  exclusions:
+    rules:
+      # defer tx.Rollback(ctx) is the standard pgx pattern — Rollback after a
+      # successful Commit returns an expected error; suppressing is idiomatic.
+      - linters: [errcheck]
+        text: "Error return value of .*(Rollback|Close|Terminate).* is not checked"
+
+      # w.Write() in HTTP handlers — write errors after headers are sent are
+      # unactionable in handlers; standard Go practice to ignore.
+      - linters: [errcheck]
+        text: "Error return value of `w\\.Write` is not checked"
+
+      # godotenv.Load() uses _ = intentionally — missing .env is expected in prod.
+      - linters: [errcheck]
+        text: "Error return value of `godotenv\\.Load` is not checked"
+
+      # Test files and test helpers — setup/teardown error ignoring is acceptable.
+      - linters: [errcheck]
+        path: "_test\\.go"
+
+      - linters: [errcheck]
+        path: "internal/testhelper/"
