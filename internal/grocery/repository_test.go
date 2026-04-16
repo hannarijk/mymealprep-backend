@@ -1,3 +1,5 @@
+//go:build integration
+
 package grocery_test
 
 import (
