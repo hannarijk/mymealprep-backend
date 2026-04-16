@@ -34,3 +34,6 @@ Thumbs.db
 
 # Build artifacts
 dist/
+
+# Local dev seed migrations (not for version control)
+*seed_dev*.sql
