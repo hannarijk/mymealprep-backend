@@ -76,14 +76,15 @@ curl -s -X PATCH http://localhost:8080/api/v1/grocery/items/$ITEM_ID \
 
 ## Running tests
 
-Both test suites require Docker (repository tests use testcontainers, E2E tests spin up a shared container via `TestMain`).
-
 ```bash
-# Unit and integration tests
-go test ./...
+# Unit tests only — fast, no Docker required
+go test -count=1 ./...
 
-# E2E tests
-go test -tags e2e ./e2e/... -v -timeout 120s
+# Unit + integration tests — requires Docker (testcontainers)
+go test -tags integration -count=1 ./...
+
+# E2E tests — requires Docker
+go test -tags e2e -count=1 ./e2e/... -v -timeout 120s
 ```
 
 ## API
